@@ -33,15 +33,16 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include <SimpleTimer.h>
 
 #include "root_html.h"
 
-#define __DEBUG_TO_SERIAL_PORT // When defined, the debug output is sent to serial at 74880 baud, otherwise the blue LED blinks on activity
+#define DEBUG_TO_SERIAL_PORT // When defined, the debug output is sent to serial at 74880 baud, otherwise the blue LED blinks on activity
 
 #define SSIDNAME "ESP"
 #define PASSWORD ""
-#define SSID_PASS_SIZE 16
-#define LOW_HIGH_SIZE 16
+#define SSID_PASS_SIZE 32
+#define LOW_HIGH_SIZE 32
 #define DATA_HEADER 0x5A
 
 typedef struct SetupStruct {
@@ -64,6 +65,8 @@ typedef struct SetupStruct {
 setup_t setup_data;
 IPAddress myIP;
 MDNSResponder mdns;
+
+SimpleTimer timer;
 
 ESP8266WebServer server ( 80 );
 
@@ -90,6 +93,9 @@ void handleRoot() {
 	int sec = millis() / 1000;
 	int min = sec / 60;
 	int hr = min / 60;
+
+  DEBUG__( "Size of page " );
+  DEBUGLN( strlen( root_html ) );
 
   handleSetup();
   
@@ -146,8 +152,6 @@ void handleSetup() {
 
     for ( byte i = 0; i < server.args(); i++ ) {
       DEBUGLN( server.argName(i) + ": " + server.arg(i) );
-
-      yield();
 
       // WiFi  
       if ( server.argName(i) == "ssid" ) {
@@ -231,12 +235,8 @@ void handleSetup() {
 
 void ResetSetup() {
   DEBUGLED( LED_ON, 0 );
-  
-  char *ptr = (char *) &setup_data;
 
   DEBUGLN( "Reset EEPROM " );
-
-  yield();
 
   // Default values for AP
   setup_data.header = DATA_HEADER;
@@ -265,13 +265,13 @@ void ResetSetup() {
  
 void ReadSetup() {
   DEBUGLED( LED_ON, 0 );
-  
-  char *ptr = (char *) &setup_data;
 
   DEBUG__( "Reading EEPROM (" );
   DEBUG__( sizeof(setup_t) );
   DEBUGLN( " bytes) " );
-/*  for ( int addr=0; addr<sizeof(setup_t); addr++ ) {
+/*  OLD VERSION
+ *   
+ *   for ( int addr=0; addr<sizeof(setup_t); addr++ ) {
     ptr[addr] = EEPROM.read(addr);
 #ifdef DEBUG_TO_SERIAL_PORT
     Serial.print ( ptr[addr], HEX );
@@ -307,27 +307,25 @@ void WriteSetup() {
   DEBUG__( "Writing EEPROM (" );
   DEBUG__( sizeof(setup_t) );
   DEBUGLN( " bytes) " );
-
-  yield();
   
   for( int addr=0; addr<sizeof(setup_t); addr++ ) {
-    EEPROM_Update(addr, ptr[addr]);
-#ifdef DEBUG_TO_SERIAL_PORT
-    Serial.print ( ptr[addr], HEX );
-    Serial.write ( ptr[addr] );
+    EEPROM_Update( addr, *(ptr+addr) );
+#ifdef DEBUG_TO_SERIAL_PORT__DISABLED
+    Serial.print ( *(ptr+addr), HEX );
+    Serial.write ( *(ptr+addr) );
     Serial.println();
 #endif
   }
   DEBUGLN( "" );
   DEBUG__( "EEPROM Commit " );  
-/*  while( !EEPROM.commit() ) {
+  while( !EEPROM.commit() ) {
     DEBUG__( "." );
     DEBUGLED( LED_OFF, 100 );    
     DEBUGLED( LED_ON, 100 ); 
     DEBUGLED( LED_OFF, 0 );   
     delay( 500 );
     DEBUGLED( LED_ON, 0 );
-  } */
+  } 
   DEBUGLN( " Done" );  
   delay(100);
   
@@ -453,15 +451,19 @@ void setup ( void ) {
 
   pinMode( 0, setup_data.gpio0_mode?INPUT:OUTPUT );
   pinMode( 2, setup_data.gpio2_mode?INPUT:OUTPUT );
+  if( setup_data.gpio0_mode == OUTPUT ) digitalWrite( 0, setup_data.gpio0_value );
+  if( setup_data.gpio2_mode == OUTPUT ) digitalWrite( 0, setup_data.gpio2_value );
 
   // Everything OK
   StartCounter( 0 );
+
+  timer.setInterval(1000, repeatMe);
 }
 
 void loop ( void ) {
 	if( setup_data.dns_name[0] ) mdns.update();
 	server.handleClient();
-
+/*
   if( setup_data.gpio0_mode == 0 ) {
     // Input
     setup_data.gpio0_value = digitalRead( 0 );
@@ -485,5 +487,15 @@ void loop ( void ) {
     DEBUG__( "GPIO2 write " );
     DEBUGLN( setup_data.gpio2_value );
   }
+*/
+
+  timer.run();
+}
+
+void repeatMe() {
+    Serial.print("Uptime (s): ");
+    Serial.print(millis() / 1000);
+    Serial.print(" Heap free: ");
+    Serial.println(ESP.getFreeHeap());
 }
 
