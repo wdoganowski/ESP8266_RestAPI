@@ -126,18 +126,18 @@ void handleRoot() {
   addContent( &message, root_html_header );
   addContent( &message, root_html_body, hr, min % 60, sec % 60 );
   addContent( &message, root_html_padding );
-  
-  addContent( &message, root_html_wifi_header );/*
+  /*
+  addContent( &message, root_html_wifi_header );
     addContent( &message, root_html_wifi_ip, myIP[0], myIP[1], myIP[2], myIP[3] );
     addContent( &message, root_html_text, "SSID", "ssid", setup_data.ssid, SSID_PASS_SIZE - 1 );
     addContent( &message, root_html_text, "Password", "pass", setup_data.password, SSID_PASS_SIZE - 1 );
-    addContent( &message, root_html_text, "DNS name", "dns", setup_data.dns_name, SSID_PASS_SIZE - 1 ); */
+    addContent( &message, root_html_text, "DNS name", "dns", setup_data.dns_name, SSID_PASS_SIZE - 1 ); 
     addContent( &message, root_html_radio_header, "Start in AP mode" );
       addContent( &message, root_html_radio_input, "ap_mode", "yes", setup_data.ap_mode?"checked":"", "Yes" );
       addContent( &message, root_html_radio_input, "ap_mode", "no", setup_data.ap_mode?"":"checked", "No" );
     addContent( &message, root_html_radio_footer );
   addContent( &message, root_html_wifi_footer );
-
+  */
   for( byte gpio = 0; gpio < GPIO_SIZE; gpio++ ) {
     addContent( &message, root_html_gpio_header, gpio_map[gpio] );
     
