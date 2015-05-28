@@ -42,11 +42,21 @@
 #define SSIDNAME "ESP"
 #define PASSWORD ""
 #define SSID_PASS_SIZE 32
-#define LOW_HIGH_SIZE 32
+#define URL_SIZE 32
 #define HASH_SIZE 20
 #define DATA_HEADER 0xA5
 #define DATA_VERSION 0x01
+#define GPIO_SIZE 2
 
+byte gpio_map[GPIO_SIZE] = {0, 2};
+
+typedef struct SetupGPIOStruct {
+  byte mode;
+  byte value;
+  char url_rising[URL_SIZE];
+  char url_falling[URL_SIZE];
+} setup_gpio_t;
+  
 typedef struct SetupStruct {
   char header;
   char version;
@@ -55,14 +65,7 @@ typedef struct SetupStruct {
   char password[SSID_PASS_SIZE];
   char dns_name[SSID_PASS_SIZE];
   byte ap_mode;
-  byte gpio0_mode;
-  byte gpio0_value;
-  char gpio0_low2high[LOW_HIGH_SIZE];
-  char gpio0_high2low[LOW_HIGH_SIZE];
-  byte gpio2_mode;
-  byte gpio2_value;
-  char gpio2_low2high[LOW_HIGH_SIZE];
-  char gpio2_high2low[LOW_HIGH_SIZE];
+  setup_gpio_t gpio[GPIO_SIZE];
   byte hash[HASH_SIZE];
 } setup_t;
 
@@ -88,43 +91,97 @@ ESP8266WebServer server ( 80 );
 /*
  * Web server
  */
+
+void addContent( String *message, const char* content, ... ) {
+  char buffer[256];
+  va_list arglist;
+
+  va_start( arglist, content );  
+  //snprintf_P( buffer, sizeof(buffer) - 1, content, arglist );
+  snprintf( buffer, sizeof(buffer) - 1, content, arglist );
+  va_end( arglist );
+  
+  *message += buffer;
+
+  DEBUGLN( *message );
+  delay(1000);
+}
  
 void handleRoot() {
 	DEBUGLED( LED_ON, 0 );
-	char temp[3050];
+	
 	int sec = millis() / 1000;
 	int min = sec / 60;
 	int hr = min / 60;
-
-  DEBUG__( "Size of page " );
-  DEBUGLN( strlen( root_html ) );
-
+  
   handleSetup();
 
   // Setup GPIO
   setupGPIO();
+
+  // Build response
+  String message;
+
+  addContent( &message, root_html_header );
+  addContent( &message, root_html_body, hr, min % 60, sec % 60 );
+  addContent( &message, root_html_padding );
   
-	snprintf ( temp, sizeof(temp), root_html, 
-	  hr, min % 60, sec % 60, 
-	  myIP[0], myIP[1], myIP[2], myIP[3], 
-	  setup_data.ssid, setup_data.password, setup_data.dns_name, 
-	  setup_data.ap_mode?"checked":"", setup_data.ap_mode?"":"checked",
-   
-	  INPUT, (setup_data.gpio0_mode==INPUT)?"checked":"", 
-    INPUT_PULLUP, (setup_data.gpio0_mode==INPUT_PULLUP)?"checked":"", 
-    INPUT_PULLDOWN, (setup_data.gpio0_mode==INPUT_PULLDOWN)?"checked":"", 
-    OUTPUT, (setup_data.gpio0_mode==OUTPUT)?"checked":"", 
-	  setup_data.gpio0_value?"":"checked", setup_data.gpio0_value?"checked":"",
-	  setup_data.gpio0_low2high, setup_data.gpio0_high2low,
-   
-    INPUT, (setup_data.gpio2_mode==INPUT)?"checked":"", 
-    INPUT_PULLUP, (setup_data.gpio2_mode==INPUT_PULLUP)?"checked":"", 
-    INPUT_PULLDOWN, (setup_data.gpio2_mode==INPUT_PULLDOWN)?"checked":"", 
-    OUTPUT, (setup_data.gpio2_mode==OUTPUT)?"checked":"", 
-    setup_data.gpio2_value?"":"checked", setup_data.gpio2_value?"checked":"",
-    setup_data.gpio2_low2high, setup_data.gpio2_high2low
-	  );
-	server.send ( 200, "text/html", temp );
+  addContent( &message, root_html_wifi_header );/*
+    addContent( &message, root_html_wifi_ip, myIP[0], myIP[1], myIP[2], myIP[3] );
+    addContent( &message, root_html_text, "SSID", "ssid", setup_data.ssid, SSID_PASS_SIZE - 1 );
+    addContent( &message, root_html_text, "Password", "pass", setup_data.password, SSID_PASS_SIZE - 1 );
+    addContent( &message, root_html_text, "DNS name", "dns", setup_data.dns_name, SSID_PASS_SIZE - 1 ); */
+    addContent( &message, root_html_radio_header, "Start in AP mode" );
+      addContent( &message, root_html_radio_input, "ap_mode", "yes", setup_data.ap_mode?"checked":"", "Yes" );
+      addContent( &message, root_html_radio_input, "ap_mode", "no", setup_data.ap_mode?"":"checked", "No" );
+    addContent( &message, root_html_radio_footer );
+  addContent( &message, root_html_wifi_footer );
+
+  for( byte gpio = 0; gpio < GPIO_SIZE; gpio++ ) {
+    addContent( &message, root_html_gpio_header, gpio_map[gpio] );
+    
+    addContent( &message, root_html_radio_header, "Mode" );
+    {
+      char buff[32];
+      sprintf( buff, "gpio%d_mode", gpio_map[gpio] );
+      
+      addContent( &message, root_html_radio_input, buff, INPUT, (setup_data.gpio[gpio].mode==INPUT)?"checked":"", "Input" );
+      addContent( &message, root_html_radio_input, buff, INPUT_PULLUP, (setup_data.gpio[gpio].mode==INPUT_PULLUP)?"checked":"", "Input Pull-up" );
+      addContent( &message, root_html_radio_input, buff, INPUT_PULLDOWN, (setup_data.gpio[gpio].mode==INPUT_PULLDOWN)?"checked":"", "Input Pull-down" );
+      addContent( &message, root_html_radio_input, buff, OUTPUT, (setup_data.gpio[gpio].mode==OUTPUT)?"checked":"", "Output" );
+    }
+    addContent( &message, root_html_radio_footer );
+    
+    addContent( &message, root_html_radio_header, "Value" );
+    {
+      char buff[32];
+      sprintf( buff, "gpio%d_value", gpio_map[gpio] );
+
+      addContent( &message, root_html_radio_input, buff, LOW, (setup_data.gpio[gpio].value==LOW)?"checked":"", "Low" );
+      addContent( &message, root_html_radio_input, buff, HIGH, (setup_data.gpio[gpio].value==HIGH)?"checked":"", "High" );
+    }
+    addContent( &message, root_html_radio_footer );
+/*
+    {
+      char buff[32];
+      
+      sprintf( buff, "gpio%d_rising", gpio_map[gpio] );            
+      addContent( &message, root_html_text, "URL on rising edge ", buff, setup_data.gpio[gpio].url_rising, URL_SIZE - 1 );
+      sprintf( buff, "gpio%d_falling", gpio_map[gpio] );            
+      addContent( &message, root_html_text, "URL on falling edge", buff, setup_data.gpio[gpio].url_falling, URL_SIZE - 1 );
+    }
+*/
+    addContent( &message, root_html_gpio_footer );
+  }
+
+  addContent( &message, root_html_buttons_footer );
+
+  addContent( &message, root_html_checkbox_input, "reset", "yes", "", "Reset to defaults" );
+  addContent( &message, root_html_checkbox_input, "reboot", "yes", "", "Reboot after saving" );
+  
+  addContent( &message, root_html_footer );
+  
+	server.send ( 200, "text/html", message );
 
 	DEBUGLED( LED_OFF, 0 );
 }
@@ -186,28 +243,28 @@ void handleSetup() {
 
       // GPIO0
       if ( server.argName(i) == "gpio0_mode" ) {
-        setup_data.gpio0_mode = server.arg(i).toInt();
+        setup_data.gpio[0].mode = server.arg(i).toInt();
       } else if ( server.argName(i) == "gpio0_value" ) {
-        setup_data.gpio0_value = server.arg(i).toInt();
-      } else if ( server.argName(i) == "gpio0_low2high" ) {
-        strncpy( setup_data.gpio0_low2high, server.arg(i).c_str(), LOW_HIGH_SIZE );
-        setup_data.gpio0_low2high[LOW_HIGH_SIZE-1] = 0;
-      } else if ( server.argName(i) == "gpio0_high2low" ) {
-        strncpy( setup_data.gpio0_high2low, server.arg(i).c_str(), LOW_HIGH_SIZE );
-        setup_data.gpio0_high2low[LOW_HIGH_SIZE-1] = 0;
+        setup_data.gpio[0].value = server.arg(i).toInt();
+      } else if ( server.argName(i) == "gpio0_rising" ) {
+        strncpy( setup_data.gpio[0].url_rising, server.arg(i).c_str(), URL_SIZE );
+        setup_data.gpio[0].url_rising[URL_SIZE-1] = 0;
+      } else if ( server.argName(i) == "gpio0_falling" ) {
+        strncpy( setup_data.gpio[0].url_falling, server.arg(i).c_str(), URL_SIZE );
+        setup_data.gpio[0].url_falling[URL_SIZE-1] = 0;
       } 
 
       // GPIO2
       if ( server.argName(i) == "gpio2_mode" ) {
-        setup_data.gpio2_mode = server.arg(i).toInt();
+        setup_data.gpio[1].mode = server.arg(i).toInt();
       } else if ( server.argName(i) == "gpio2_value" ) {
-        setup_data.gpio2_value = server.arg(i).toInt();
-      } else if ( server.argName(i) == "gpio2_low2high" ) {
-        strncpy( setup_data.gpio2_low2high, server.arg(i).c_str(), LOW_HIGH_SIZE );
-        setup_data.gpio2_low2high[LOW_HIGH_SIZE-1] = 0;
-      } else if ( server.argName(i) == "gpio2_high2low" ) {
-        strncpy( setup_data.gpio2_high2low, server.arg(i).c_str(), LOW_HIGH_SIZE );
-        setup_data.gpio2_high2low[LOW_HIGH_SIZE-1] = 0;
+        setup_data.gpio[1].value = server.arg(i).toInt();
+      } else if ( server.argName(i) == "gpio2_rising" ) {
+        strncpy( setup_data.gpio[1].url_rising, server.arg(i).c_str(), URL_SIZE );
+        setup_data.gpio[1].url_rising[URL_SIZE-1] = 0;
+      } else if ( server.argName(i) == "gpio2_falling" ) {
+        strncpy( setup_data.gpio[1].url_falling, server.arg(i).c_str(), URL_SIZE );
+        setup_data.gpio[1].url_falling[URL_SIZE-1] = 0;
       }   
 
       // Reboot & Reset
@@ -226,13 +283,7 @@ void handleSetup() {
     else WriteSetup();
   
     if (reboot) {
-      server.send ( 200, "text/html", 
-       "<html><head><meta http-equiv='refresh' content='15'/><title>ESP8266 PIO Bridge</title>\
-        <style>body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }</style>\
-        </head>\
-        <body><h1>REBOOTING...</h1></body>\
-        </html>" 
-      );
+      server.send ( 200, "text/html", root_html_rebooting );
       // reset here
       ESP.restart();
     }
@@ -261,17 +312,14 @@ void ResetSetup() {
   strcpy( setup_data.password, PASSWORD );
   strcpy( setup_data.dns_name, setup_data.ssid );
   setup_data.ap_mode = 1;
-  
-  setup_data.gpio0_mode = 0;
-  setup_data.gpio0_value = 0;
-  strcpy( setup_data.gpio0_low2high, "" );
-  strcpy( setup_data.gpio0_high2low, "" );
-  
-  setup_data.gpio2_mode = 0;
-  setup_data.gpio2_value = 0;
-  strcpy( setup_data.gpio2_low2high, "" );
-  strcpy( setup_data.gpio2_high2low, "" );
-  
+
+  for( byte gpio = 0; gpio<GPIO_SIZE; gpio++ ) {
+    setup_data.gpio[gpio].mode = 0;
+    setup_data.gpio[gpio].value = 0;
+    strcpy( setup_data.gpio[gpio].url_rising, "" );
+    strcpy( setup_data.gpio[gpio].url_falling, "" );
+  }
+    
   WriteSetup();
   
   DEBUGLED( LED_OFF, 0 );
@@ -347,6 +395,7 @@ void StartCounter( byte counter ) {
  * GPIO Setup
  */
 
+/*
 #define DEBOUNCE_DELAY 50
 
 void isr_GPIO( int gpio, byte *value_ptr, byte *last_ptr, int *time_ptr ) {
@@ -377,63 +426,51 @@ void isr_GPIO( int gpio, byte *value_ptr, byte *last_ptr, int *time_ptr ) {
   *value_ptr = reading;
 
 }
+*/
+
+byte last_value[GPIO_SIZE];
+bool call_gpio_rising_callback[GPIO_SIZE] = {0};
+bool call_gpio_falling_callback[GPIO_SIZE] = {0};
 
 // GPIO0 ISR
 
-byte last_value_0 = setup_data.gpio0_value;
-//int last_time_0 = 0;
-bool call_gpio0_low2high_callback = 0;
-bool call_gpio0_high2low_callback = 0;
+void (*isr_GPIO[GPIO_SIZE])() = {isr_GPIO0, isr_GPIO1};
 
-void isr_GPIO0( void ) {  
+void isr_GPIO0( void ) {
+  const byte gpio = 0;  
   //isr_GPIO( 0, &setup_data.gpio0_value, &last_value_0, &last_time_0 );
-  setup_data.gpio0_value = digitalRead( 0 );
-  if( setup_data.gpio0_value != last_value_0 ) {
-    last_value_0 = setup_data.gpio0_value;
-    if( setup_data.gpio0_value ) call_gpio0_low2high_callback = 1;
-    else call_gpio0_high2low_callback = 1;
+  setup_data.gpio[gpio].value = digitalRead( gpio_map[gpio] );
+  if( setup_data.gpio[gpio].value != last_value[gpio] ) {
+    last_value[gpio] = setup_data.gpio[gpio].value;
+    if( setup_data.gpio[gpio].value ) call_gpio_rising_callback[gpio] = 1;
+    else call_gpio_falling_callback[gpio] = 1;
   }
 }
 
 // GPIO2 ISR
 
-byte last_value_2 = setup_data.gpio2_value;
-//int last_time_2 = 0;
-bool call_gpio2_low2high_callback = 0;
-bool call_gpio2_high2low_callback = 0;
-
-void isr_GPIO2( void ) {  
-  //isr_GPIO( 2, &setup_data.gpio2_value, &last_value_2, &last_time_2 );
-  setup_data.gpio0_value = digitalRead( 2 );
-  if( setup_data.gpio2_value != last_value_2 ) {
-    last_value_2 = setup_data.gpio2_value;
-    if( setup_data.gpio2_value ) call_gpio2_low2high_callback = 1;
-    else call_gpio2_high2low_callback = 1;
-  }}
+void isr_GPIO1( void ) {
+  const byte gpio = 1;  
+  //isr_GPIO( 0, &setup_data.gpio0_value, &last_value_0, &last_time_0 );
+  setup_data.gpio[gpio].value = digitalRead( gpio_map[gpio] );
+  if( setup_data.gpio[gpio].value != last_value[gpio] ) {
+    last_value[gpio] = setup_data.gpio[gpio].value;
+    if( setup_data.gpio[gpio].value ) call_gpio_rising_callback[gpio] = 1;
+    else call_gpio_falling_callback[gpio] = 1;
+  }
+}
 
 // Helpers
 
-bool checkIfCallbackSet( byte gpio, bool high2low ) {
+bool checkIfCallbackSet( byte gpio, bool rising ) {
   bool result = 0;
-  switch( gpio ) {
+  switch( rising ) {
     case 0: {
-      if( high2low ) {
-        result = call_gpio0_high2low_callback;
-        call_gpio0_high2low_callback = 0;
-      } else {
-        result = call_gpio0_low2high_callback;
-        call_gpio0_low2high_callback = 0;
-      }
+      call_gpio_rising_callback[gpio];
       break;
     }
-    case 2: {
-      if( high2low ) {
-        result = call_gpio2_high2low_callback;
-        call_gpio2_high2low_callback = 0;
-      } else {
-        result = call_gpio2_low2high_callback;
-        call_gpio2_low2high_callback = 0;
-      }
+    case 1: {
+      call_gpio_falling_callback[gpio];
       break;
     }
   }
@@ -443,30 +480,26 @@ bool checkIfCallbackSet( byte gpio, bool high2low ) {
 // Setup function
 
 void setupGPIO( void ) {
-  DEBUG__( "GPIO0 mode " );
-  DEBUGLN( setup_data.gpio0_mode );
-  DEBUG__( "GPIO2 mode " );
-  DEBUGLN( setup_data.gpio2_mode );
-  
-  pinMode( 0, setup_data.gpio0_mode );
-  pinMode( 2, setup_data.gpio2_mode );
-  if( setup_data.gpio0_mode & OUTPUT ) {
-    detachInterrupt( 0 ); 
-    digitalWrite( 0, setup_data.gpio0_value );
-    DEBUG__( "GPIO0 set to " );
-    DEBUGLN( setup_data.gpio0_value );
-  } else {
-    attachInterrupt( 0, isr_GPIO0, CHANGE );
-    DEBUGLN( "Interrupt attached to GPIO0" );  
-  }
-  if( setup_data.gpio2_mode & OUTPUT ) {
-    detachInterrupt( 2 ); 
-    digitalWrite( 2, setup_data.gpio2_value );
-    DEBUG__( "GPIO2 set to " );
-    DEBUGLN( setup_data.gpio0_value );
-  } else {
-    attachInterrupt( 2, isr_GPIO2, CHANGE );
-    DEBUGLN( "Interrupt attached to GPIO2" ); 
+  for( byte gpio=0; gpio<GPIO_SIZE; gpio++ ) {
+    DEBUG__( "GPIO" );
+    DEBUG__( gpio_map[gpio] );
+    DEBUG__( " mode " );
+    DEBUGLN( setup_data.gpio[gpio].mode );
+
+    pinMode( gpio_map[gpio], setup_data.gpio[gpio].mode );
+    if( setup_data.gpio[gpio].mode & OUTPUT ) {
+      detachInterrupt( gpio_map[gpio] ); 
+      digitalWrite( gpio_map[gpio], setup_data.gpio[gpio].value );
+      DEBUG__( "GPIO" );
+      DEBUG__( gpio_map[gpio] );
+      DEBUG__( " set to " );
+      DEBUGLN( setup_data.gpio[gpio].value );
+    } else {
+      last_value[gpio] = setup_data.gpio[gpio].value;
+      attachInterrupt( gpio_map[gpio], isr_GPIO[gpio], CHANGE );
+      DEBUG__( "Interrupt attached to GPIO" );
+      DEBUGLN( gpio_map[gpio] );
+    }
   }
 }
 
@@ -480,8 +513,9 @@ void setup ( void ) {
   // Init PIO
 #ifndef DEBUG_TO_SERIAL_PORT
   pinMode ( 1, OUTPUT ); // When debug on serial defined, this is TX pin, no need to init here
-#endif
+#else
   pinMode ( 2, OUTPUT );
+#endif
   DEBUGLED( LED_OFF, 0 );
 
 #ifdef DEBUG_TO_SERIAL_PORT
@@ -592,10 +626,11 @@ void loop ( void ) {
 	if( setup_data.dns_name[0] ) mdns.update();
 	server.handleClient();
 
-  if( checkIfCallbackSet( 0, 0 ) ) { DEBUG__( "GPIO0 RISING " ); DEBUGLN( setup_data.gpio0_low2high ); }
-  if( checkIfCallbackSet( 0, 1 ) ) { DEBUG__( "GPIO0 FALLING " ); DEBUGLN( setup_data.gpio0_high2low ); }
-  if( checkIfCallbackSet( 2, 0 ) ) { DEBUG__( "GPIO2 RISING " ); DEBUGLN( setup_data.gpio2_low2high ); }
-  if( checkIfCallbackSet( 2, 1 ) ) { DEBUG__( "GPIO2 FALLING " ); DEBUGLN( setup_data.gpio2_high2low ); }
+  for( byte gpio=0; gpio<GPIO_SIZE; gpio++ ) {
+    if( call_gpio_rising_callback[gpio] ) { DEBUG__( "GPIO RISING " ); DEBUG__( gpio_map[gpio] ); DEBUGLN( setup_data.gpio[gpio].url_rising ); }
+    if( call_gpio_falling_callback[gpio] ) { DEBUG__( "GPIO FALLING " ); DEBUG__( gpio_map[gpio] ); DEBUGLN( setup_data.gpio[gpio].url_falling ); }
+  }
+
 }
 
 
