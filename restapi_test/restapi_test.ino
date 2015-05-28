@@ -70,8 +70,6 @@ setup_t setup_data;
 IPAddress myIP;
 MDNSResponder mdns;
 
-SimpleTimer timer;
-
 ESP8266WebServer server ( 80 );
 
 #define LED_ON  1 // For blue LED, ON is 0
@@ -93,7 +91,7 @@ ESP8266WebServer server ( 80 );
  
 void handleRoot() {
 	DEBUGLED( LED_ON, 0 );
-	char temp[3000];
+	char temp[3050];
 	int sec = millis() / 1000;
 	int min = sec / 60;
 	int hr = min / 60;
@@ -102,16 +100,27 @@ void handleRoot() {
   DEBUGLN( strlen( root_html ) );
 
   handleSetup();
+
+  // Setup GPIO
+  setupGPIO();
   
-	snprintf ( temp, 3000, root_html, 
+	snprintf ( temp, sizeof(temp), root_html, 
 	  hr, min % 60, sec % 60, 
 	  myIP[0], myIP[1], myIP[2], myIP[3], 
 	  setup_data.ssid, setup_data.password, setup_data.dns_name, 
 	  setup_data.ap_mode?"checked":"", setup_data.ap_mode?"":"checked",
-	  setup_data.gpio0_mode?"":"checked", setup_data.gpio0_mode?"checked":"",
+   
+	  INPUT, (setup_data.gpio0_mode==INPUT)?"checked":"", 
+    INPUT_PULLUP, (setup_data.gpio0_mode==INPUT_PULLUP)?"checked":"", 
+    INPUT_PULLDOWN, (setup_data.gpio0_mode==INPUT_PULLDOWN)?"checked":"", 
+    OUTPUT, (setup_data.gpio0_mode==OUTPUT)?"checked":"", 
 	  setup_data.gpio0_value?"":"checked", setup_data.gpio0_value?"checked":"",
 	  setup_data.gpio0_low2high, setup_data.gpio0_high2low,
-    setup_data.gpio2_mode?"":"checked", setup_data.gpio2_mode?"checked":"",
+   
+    INPUT, (setup_data.gpio2_mode==INPUT)?"checked":"", 
+    INPUT_PULLUP, (setup_data.gpio2_mode==INPUT_PULLUP)?"checked":"", 
+    INPUT_PULLDOWN, (setup_data.gpio2_mode==INPUT_PULLDOWN)?"checked":"", 
+    OUTPUT, (setup_data.gpio2_mode==OUTPUT)?"checked":"", 
     setup_data.gpio2_value?"":"checked", setup_data.gpio2_value?"checked":"",
     setup_data.gpio2_low2high, setup_data.gpio2_high2low
 	  );
@@ -335,6 +344,134 @@ void StartCounter( byte counter ) {
 }
 
 /*
+ * GPIO Setup
+ */
+
+#define DEBOUNCE_DELAY 50
+
+void isr_GPIO( int gpio, byte *value_ptr, byte *last_ptr, int *time_ptr ) {
+  int reading = digitalRead( gpio );
+  
+  // If the switch changed, due to noise or pressing:
+  if( reading != *last_ptr ) {
+    // reset the debouncing timer
+    *time_ptr = millis();
+  }
+
+  if( ( millis() - *time_ptr ) > DEBOUNCE_DELAY ) {
+    // whatever the reading is at, it's been there for longer
+    // than the debounce delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if( reading != *value_ptr ) {
+      *value_ptr = reading;
+
+      // action herer
+    }
+  }
+  
+  // save the reading.  Next time through the loop,
+  // it'll be the last_GPIO_state:
+  *last_ptr = reading;  
+  
+  *value_ptr = reading;
+
+}
+
+// GPIO0 ISR
+
+byte last_value_0 = setup_data.gpio0_value;
+//int last_time_0 = 0;
+bool call_gpio0_low2high_callback = 0;
+bool call_gpio0_high2low_callback = 0;
+
+void isr_GPIO0( void ) {  
+  //isr_GPIO( 0, &setup_data.gpio0_value, &last_value_0, &last_time_0 );
+  setup_data.gpio0_value = digitalRead( 0 );
+  if( setup_data.gpio0_value != last_value_0 ) {
+    last_value_0 = setup_data.gpio0_value;
+    if( setup_data.gpio0_value ) call_gpio0_low2high_callback = 1;
+    else call_gpio0_high2low_callback = 1;
+  }
+}
+
+// GPIO2 ISR
+
+byte last_value_2 = setup_data.gpio2_value;
+//int last_time_2 = 0;
+bool call_gpio2_low2high_callback = 0;
+bool call_gpio2_high2low_callback = 0;
+
+void isr_GPIO2( void ) {  
+  //isr_GPIO( 2, &setup_data.gpio2_value, &last_value_2, &last_time_2 );
+  setup_data.gpio0_value = digitalRead( 2 );
+  if( setup_data.gpio2_value != last_value_2 ) {
+    last_value_2 = setup_data.gpio2_value;
+    if( setup_data.gpio2_value ) call_gpio2_low2high_callback = 1;
+    else call_gpio2_high2low_callback = 1;
+  }}
+
+// Helpers
+
+bool checkIfCallbackSet( byte gpio, bool high2low ) {
+  bool result = 0;
+  switch( gpio ) {
+    case 0: {
+      if( high2low ) {
+        result = call_gpio0_high2low_callback;
+        call_gpio0_high2low_callback = 0;
+      } else {
+        result = call_gpio0_low2high_callback;
+        call_gpio0_low2high_callback = 0;
+      }
+      break;
+    }
+    case 2: {
+      if( high2low ) {
+        result = call_gpio2_high2low_callback;
+        call_gpio2_high2low_callback = 0;
+      } else {
+        result = call_gpio2_low2high_callback;
+        call_gpio2_low2high_callback = 0;
+      }
+      break;
+    }
+  }
+  return result;
+}
+
+// Setup function
+
+void setupGPIO( void ) {
+  DEBUG__( "GPIO0 mode " );
+  DEBUGLN( setup_data.gpio0_mode );
+  DEBUG__( "GPIO2 mode " );
+  DEBUGLN( setup_data.gpio2_mode );
+  
+  pinMode( 0, setup_data.gpio0_mode );
+  pinMode( 2, setup_data.gpio2_mode );
+  if( setup_data.gpio0_mode & OUTPUT ) {
+    detachInterrupt( 0 ); 
+    digitalWrite( 0, setup_data.gpio0_value );
+    DEBUG__( "GPIO0 set to " );
+    DEBUGLN( setup_data.gpio0_value );
+  } else {
+    attachInterrupt( 0, isr_GPIO0, CHANGE );
+    DEBUGLN( "Interrupt attached to GPIO0" );  
+  }
+  if( setup_data.gpio2_mode & OUTPUT ) {
+    detachInterrupt( 2 ); 
+    digitalWrite( 2, setup_data.gpio2_value );
+    DEBUG__( "GPIO2 set to " );
+    DEBUGLN( setup_data.gpio0_value );
+  } else {
+    attachInterrupt( 2, isr_GPIO2, CHANGE );
+    DEBUGLN( "Interrupt attached to GPIO2" ); 
+  }
+}
+
+
+/*
  * Setup
  */
  
@@ -445,10 +582,7 @@ void setup ( void ) {
   DEBUGLED( LED_OFF, 1000 );   
 	DEBUGLN( "HTTP server started" );
 
-  pinMode( 0, setup_data.gpio0_mode?INPUT:OUTPUT );
-  pinMode( 2, setup_data.gpio2_mode?INPUT:OUTPUT );
-  if( setup_data.gpio0_mode == OUTPUT ) digitalWrite( 0, setup_data.gpio0_value );
-  if( setup_data.gpio2_mode == OUTPUT ) digitalWrite( 0, setup_data.gpio2_value );
+  setupGPIO();
 
   // Everything OK
   StartCounter( 0 );
@@ -457,31 +591,11 @@ void setup ( void ) {
 void loop ( void ) {
 	if( setup_data.dns_name[0] ) mdns.update();
 	server.handleClient();
-/*
-  if( setup_data.gpio0_mode == 0 ) {
-    // Input
-    setup_data.gpio0_value = digitalRead( 0 );
-    DEBUG__( "GPIO0 read " );
-    DEBUGLN( setup_data.gpio0_value );
-  } else {
-    // Output
-    digitalWrite( 0, setup_data.gpio0_value );
-    DEBUG__( "GPIO0 write " );
-    DEBUGLN( setup_data.gpio0_value );
-  }
 
-  if( setup_data.gpio2_mode == 0 ) {
-    // Input
-    setup_data.gpio2_value = digitalRead( 2 );
-    DEBUG__( "GPIO2 read " );
-    DEBUGLN( setup_data.gpio2_value );
-  } else {
-    // Output
-    digitalWrite( 2, setup_data.gpio2_value );
-    DEBUG__( "GPIO2 write " );
-    DEBUGLN( setup_data.gpio2_value );
-  }
-*/
+  if( checkIfCallbackSet( 0, 0 ) ) { DEBUG__( "GPIO0 RISING " ); DEBUGLN( setup_data.gpio0_low2high ); }
+  if( checkIfCallbackSet( 0, 1 ) ) { DEBUG__( "GPIO0 FALLING " ); DEBUGLN( setup_data.gpio0_high2low ); }
+  if( checkIfCallbackSet( 2, 0 ) ) { DEBUG__( "GPIO2 RISING " ); DEBUGLN( setup_data.gpio2_low2high ); }
+  if( checkIfCallbackSet( 2, 1 ) ) { DEBUG__( "GPIO2 FALLING " ); DEBUGLN( setup_data.gpio2_high2low ); }
 }
 
 

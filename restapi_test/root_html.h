@@ -30,8 +30,10 @@ static const char root_html[] = "\
     <div style='background-color:lightgrey; padding:20px;'>\
     <h2>Select function of GPIO<b>0</b></h2>\
     <p style='font-size:80%'>Mode\
-    <input type='radio' name='gpio0_mode' value='0' %s>Input\
-    <input type='radio' name='gpio0_mode' value='1' %s>Output\
+    <input type='radio' name='gpio0_mode' value='%d' %s>Input\
+    <input type='radio' name='gpio0_mode' value='%d' %s>Input Pull-up\
+    <input type='radio' name='gpio0_mode' value='%d' %s>Input Pull-down\
+    <input type='radio' name='gpio0_mode' value='%d' %s>Output\
     </p>\
     <p style='font-size:80%'>Value\
     <input type='radio' name='gpio0_value' value='0' %s>0\
@@ -46,8 +48,10 @@ static const char root_html[] = "\
     <div style='background-color:lightgrey; padding:20px;'>\
     <h2>Select function of GPIO<b>2</b></h2>\
     <p style='font-size:80%'>Mode\
-    <input type='radio' name='gpio2_mode' value='0' %s>Input\
-    <input type='radio' name='gpio2_mode' value='1' %s>Output\
+    <input type='radio' name='gpio2_mode' value='%d' %s>Input\
+    <input type='radio' name='gpio2_mode' value='%d' %s>Input Pull-up\
+    <input type='radio' name='gpio2_mode' value='%d' %s>Input Pull-down\
+    <input type='radio' name='gpio2_mode' value='%d' %s>Output\
     </p>\
     <p style='font-size:80%'>Value\
     <input type='radio' name='gpio2_value' value='0' %s>0\
