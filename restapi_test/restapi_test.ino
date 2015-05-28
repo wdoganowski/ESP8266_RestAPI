@@ -27,7 +27,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
+ 
+#include <PgmSpace.h>
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
@@ -97,8 +98,8 @@ void addContent( String *message, const char* content, ... ) {
   va_list arglist;
 
   va_start( arglist, content );  
-  //snprintf_P( buffer, sizeof(buffer) - 1, content, arglist );
-  snprintf( buffer, sizeof(buffer) - 1, content, arglist );
+  snprintf_P( buffer, sizeof(buffer) - 1, content, arglist );
+  //snprintf( buffer, sizeof(buffer) - 1, content, arglist );
   va_end( arglist );
   
   *message += buffer;
