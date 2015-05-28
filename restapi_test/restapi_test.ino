@@ -34,6 +34,7 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <SimpleTimer.h>
+#include <Hash.h>
 
 #include "root_html.h"
 
@@ -43,10 +44,13 @@
 #define PASSWORD ""
 #define SSID_PASS_SIZE 32
 #define LOW_HIGH_SIZE 32
-#define DATA_HEADER 0x5A
+#define HASH_SIZE 20
+#define DATA_HEADER 0xA5
+#define DATA_VERSION 0x01
 
 typedef struct SetupStruct {
   char header;
+  char version;
   byte start_counter;
   char ssid[SSID_PASS_SIZE];
   char password[SSID_PASS_SIZE];
@@ -60,6 +64,7 @@ typedef struct SetupStruct {
   byte gpio2_value;
   char gpio2_low2high[LOW_HIGH_SIZE];
   char gpio2_high2low[LOW_HIGH_SIZE];
+  byte hash[HASH_SIZE];
 } setup_t;
 
 setup_t setup_data;
@@ -240,6 +245,7 @@ void ResetSetup() {
 
   // Default values for AP
   setup_data.header = DATA_HEADER;
+  setup_data.version = DATA_VERSION;
   setup_data.start_counter = 0; 
   byte mac[6];
   WiFi.macAddress(mac); // Read MAC
@@ -280,10 +286,14 @@ void ReadSetup() {
 #endif
   }
 */  
-  memcpy( &setup_data, EEPROM.getDataPtr(), sizeof(setup_t) );
+  memcpy( &setup_data, EEPROM.getDataPtr(), sizeof(setup_t) - HASH_SIZE );
   DEBUGLN( "" );
+
+  byte hash[HASH_SIZE];
+  sha1( (byte*)&setup_data, sizeof(setup_t) - HASH_SIZE, (byte*)&hash[0] );
   
-  if( setup_data.header == DATA_HEADER ) {
+  if( setup_data.header == DATA_HEADER && setup_data.version == DATA_VERSION 
+      && memcmp( hash, setup_data.hash, HASH_SIZE ) == 0 ) {
     // We have the setup
   } else {
     // Default values for AP  
@@ -307,6 +317,8 @@ void WriteSetup() {
   DEBUG__( "Writing EEPROM (" );
   DEBUG__( sizeof(setup_t) );
   DEBUGLN( " bytes) " );
+
+  sha1( ptr, sizeof(setup_t) - HASH_SIZE, &setup_data.hash[0] );
   
   for( int addr=0; addr<sizeof(setup_t); addr++ ) {
     EEPROM_Update( addr, *(ptr+addr) );
