@@ -33,7 +33,6 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-#include <SimpleTimer.h>
 #include <Hash.h>
 
 #include "root_html.h"
@@ -453,8 +452,6 @@ void setup ( void ) {
 
   // Everything OK
   StartCounter( 0 );
-
-  timer.setInterval(1000, repeatMe);
 }
 
 void loop ( void ) {
@@ -485,14 +482,6 @@ void loop ( void ) {
     DEBUGLN( setup_data.gpio2_value );
   }
 */
-
-  timer.run();
 }
 
-void repeatMe() {
-    Serial.print("Uptime (s): ");
-    Serial.print(millis() / 1000);
-    Serial.print(" Heap free: ");
-    Serial.println(ESP.getFreeHeap());
-}
 
