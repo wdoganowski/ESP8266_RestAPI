@@ -275,18 +275,8 @@ void ReadSetup() {
   DEBUG__( "Reading EEPROM (" );
   DEBUG__( sizeof(setup_t) );
   DEBUGLN( " bytes) " );
-/*  OLD VERSION
- *   
- *   for ( int addr=0; addr<sizeof(setup_t); addr++ ) {
-    ptr[addr] = EEPROM.read(addr);
-#ifdef DEBUG_TO_SERIAL_PORT
-    Serial.print ( ptr[addr], HEX );
-    Serial.write ( ptr[addr] );
-    Serial.println();
-#endif
-  }
-*/  
-  memcpy( &setup_data, EEPROM.getDataPtr(), sizeof(setup_t) - HASH_SIZE );
+ 
+  memcpy( &setup_data, EEPROM.getDataPtr(), sizeof(setup_t) );
   DEBUGLN( "" );
 
   byte hash[HASH_SIZE];
@@ -322,11 +312,6 @@ void WriteSetup() {
   
   for( int addr=0; addr<sizeof(setup_t); addr++ ) {
     EEPROM_Update( addr, *(ptr+addr) );
-#ifdef DEBUG_TO_SERIAL_PORT__DISABLED
-    Serial.print ( *(ptr+addr), HEX );
-    Serial.write ( *(ptr+addr) );
-    Serial.println();
-#endif
   }
   DEBUGLN( "" );
   DEBUG__( "EEPROM Commit " );  
