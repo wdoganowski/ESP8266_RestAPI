@@ -31,20 +31,22 @@
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
+#include <HttpClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 
 #include "root_html.h"
 
-#define __DEBUG_TO_SERIAL_PORT // When defined, the debug output is sent to serial at 74880 baud, otherwise the blue LED blinks on activity
+#define DEBUG_TO_SERIAL_PORT // When defined, the debug output is sent to serial at 74880 baud, otherwise the blue LED blinks on activity
 
 #define SSIDNAME "ESP"
 #define PASSWORD ""
 #define SSID_PASS_SIZE 16
-#define LOW_HIGH_SIZE 16
-#define DATA_HEADER 0x5A
+#define LOW_HIGH_SIZE 32
+#define DATA_HEADER 0x02
 
 typedef struct SetupStruct {
+  char size;
   char header;
   byte start_counter;
   char ssid[SSID_PASS_SIZE];
@@ -80,6 +82,33 @@ ESP8266WebServer server ( 80 );
 #define DEBUGLN( message ) {}
 #endif
 
+/*
+ * Utils
+ */
+
+// http://stackoverflow.com/questions/2673207/c-c-url-decode-library
+void urldecoden(char *dst, const char *src, int len)
+{
+  char a, b;
+  while( *src && (len > 1) ) {
+    if( (*src == '%') && 
+      ((a = src[1]) && (b = src[2])) &&
+      (isxdigit(a) && isxdigit(b)) ) {
+      if( a >= 'a' ) a -= 'a'-'A';
+      if( a >= 'A' ) a -= ('A' - 10);
+      else a -= '0';
+      if( b >= 'a' ) b -= 'a'-'A';
+      if( b >= 'A' ) b -= ('A' - 10);
+      else b -= '0';
+      *dst++ = 16*a+b;
+      src+=3;
+    } else {
+      *dst++ = *src++;
+    }
+    len-=1;
+  }
+  if( len > 0 ) *dst++ = '\0';
+}
 /*
  * Web server
  */
@@ -170,26 +199,28 @@ void handleSetup() {
       // GPIO0
       if ( server.argName(i) == "gpio0_mode" ) {
         setup_data.gpio0_mode = server.arg(i).toInt();
+        pinMode( 0, setup_data.gpio0_mode?INPUT:OUTPUT );
       } else if ( server.argName(i) == "gpio0_value" ) {
         setup_data.gpio0_value = server.arg(i).toInt();
       } else if ( server.argName(i) == "gpio0_low2high" ) {
-        strncpy( setup_data.gpio0_low2high, server.arg(i).c_str(), LOW_HIGH_SIZE );
+        urldecoden( setup_data.gpio0_low2high, server.arg(i).c_str(), LOW_HIGH_SIZE );
         setup_data.gpio0_low2high[LOW_HIGH_SIZE-1] = 0;
       } else if ( server.argName(i) == "gpio0_high2low" ) {
-        strncpy( setup_data.gpio0_high2low, server.arg(i).c_str(), LOW_HIGH_SIZE );
+        urldecoden( setup_data.gpio0_high2low, server.arg(i).c_str(), LOW_HIGH_SIZE );
         setup_data.gpio0_high2low[LOW_HIGH_SIZE-1] = 0;
       } 
 
       // GPIO2
       if ( server.argName(i) == "gpio2_mode" ) {
         setup_data.gpio2_mode = server.arg(i).toInt();
+        pinMode( 2, setup_data.gpio2_mode?INPUT:OUTPUT );     
       } else if ( server.argName(i) == "gpio2_value" ) {
         setup_data.gpio2_value = server.arg(i).toInt();
       } else if ( server.argName(i) == "gpio2_low2high" ) {
-        strncpy( setup_data.gpio2_low2high, server.arg(i).c_str(), LOW_HIGH_SIZE );
+        urldecoden( setup_data.gpio2_low2high, server.arg(i).c_str(), LOW_HIGH_SIZE );
         setup_data.gpio2_low2high[LOW_HIGH_SIZE-1] = 0;
       } else if ( server.argName(i) == "gpio2_high2low" ) {
-        strncpy( setup_data.gpio2_high2low, server.arg(i).c_str(), LOW_HIGH_SIZE );
+        urldecoden( setup_data.gpio2_high2low, server.arg(i).c_str(), LOW_HIGH_SIZE );
         setup_data.gpio2_high2low[LOW_HIGH_SIZE-1] = 0;
       }   
 
@@ -239,6 +270,7 @@ void ResetSetup() {
   yield();
 
   // Default values for AP
+  setup_data.size = sizeof(setup_t);
   setup_data.header = DATA_HEADER;
   setup_data.start_counter = 0; 
   byte mac[6];
@@ -271,7 +303,7 @@ void ReadSetup() {
   DEBUG__( "Reading EEPROM (" );
   DEBUG__( sizeof(setup_t) );
   DEBUGLN( " bytes) " );
-/*  for ( int addr=0; addr<sizeof(setup_t); addr++ ) {
+  for ( int addr=0; addr<sizeof(setup_t); addr++ ) {
     ptr[addr] = EEPROM.read(addr);
 #ifdef DEBUG_TO_SERIAL_PORT
     Serial.print ( ptr[addr], HEX );
@@ -279,11 +311,11 @@ void ReadSetup() {
     Serial.println();
 #endif
   }
-*/  
+  
   memcpy( &setup_data, EEPROM.getDataPtr(), sizeof(setup_t) );
   DEBUGLN( "" );
   
-  if( setup_data.header == DATA_HEADER ) {
+  if( (setup_data.size == sizeof(setup_t)) && (setup_data.header == DATA_HEADER) ) {
     // We have the setup
   } else {
     // Default values for AP  
@@ -320,14 +352,14 @@ void WriteSetup() {
   }
   DEBUGLN( "" );
   DEBUG__( "EEPROM Commit " );  
-/*  while( !EEPROM.commit() ) {
+  while( !EEPROM.commit() ) {
     DEBUG__( "." );
     DEBUGLED( LED_OFF, 100 );    
     DEBUGLED( LED_ON, 100 ); 
     DEBUGLED( LED_OFF, 0 );   
     delay( 500 );
     DEBUGLED( LED_ON, 0 );
-  } */
+  } 
   DEBUGLN( " Done" );  
   delay(100);
   
@@ -336,8 +368,39 @@ void WriteSetup() {
 
 void StartCounter( byte counter ) {
   setup_data.start_counter = counter;
-  EEPROM.write(1, counter);
+  EEPROM.write(2, counter); // Counter location in the structure
   EEPROM.commit();
+}
+
+/*
+ * Calling URL
+ */
+
+void call_url( byte old_value, const char* url_low2high, const char* url_high2low ) {
+  // Initialize the client library
+  HttpClient client;
+
+  DEBUGLED( LED_OFF, 100 );    
+  if( old_value == 0 && url_low2high && strlen(url_low2high) ) {
+    // Call low2high URL
+    DEBUG__( "URL Low2High " );  
+    DEBUGLN( url_low2high );  
+    client.get( url_low2high );
+//    while (client.available()) {
+//      DEBUG__( client.read() );
+//    }
+//    DEBUGLN( "" );  
+  } else if( old_value == 1 && url_high2low && strlen(url_high2low) ) {
+    // Call high2low URL
+    DEBUG__( "URL High2low " );  
+    DEBUGLN( url_high2low );  
+    client.get(url_high2low);
+//    while (client.available()) {
+//      DEBUG__( client.read() );
+//    }
+//    DEBUGLN( "" );
+  }
+  DEBUGLED( LED_ON, 100 ); 
 }
 
 /*
@@ -355,7 +418,7 @@ void setup ( void ) {
 
 #ifdef DEBUG_TO_SERIAL_PORT
   delay(5000);
-  Serial.begin ( 74880 );
+  Serial.begin ( 115200 );
   // Init Serial
   while (!Serial) {
     delay( 1 ); // wait for serial port to connect. Needed for Leonardo only
@@ -366,7 +429,7 @@ void setup ( void ) {
   DEBUGLN( "ESP8266 REST API 1.0" );
   
   // Init EEPROM
-  EEPROM.begin( sizeof( setup_t ) );
+  EEPROM.begin( 512 );
   ReadSetup();
   if( setup_data.start_counter > 3 ) {
     DEBUGLN( "*** RESET SETUP ***" );
@@ -384,6 +447,8 @@ void setup ( void ) {
    
     DEBUGLN( "Staring in AP mode:" );
     DEBUGLN( setup_data.ssid );
+    // Set WiFi mode to access point
+    WiFi.mode(WIFI_AP);
     WiFi.softAP( setup_data.ssid ); 
  
     // Wait for setup
@@ -392,7 +457,7 @@ void setup ( void ) {
       DEBUGLED( LED_OFF, 0 );
       delay( 500 );
       DEBUG__( "." );
-    } */ 
+    }*/
 
     myIP = WiFi.softAPIP();
 
@@ -408,14 +473,19 @@ void setup ( void ) {
     DEBUGLN( setup_data.ssid );
 
     // Init WiFi
+    // Set WiFi mode to station (as opposed to AP or AP_STA)
+    WiFi.mode(WIFI_STA);
     WiFi.begin ( setup_data.ssid, setup_data.password );
 
     // Wait for connection
+    byte counter = 0;
     while ( WiFi.status() != WL_CONNECTED ) {
       DEBUGLED( LED_ON, 250 );
       DEBUGLED( LED_OFF, 0 );
       delay( 500 );
       DEBUG__( "." );
+      counter+=1;
+      if( counter > 50 ) ESP.restart(); // Restart if after 50 tries, can not connect
     }
 
     myIP = WiFi.localIP();
@@ -458,6 +528,12 @@ void setup ( void ) {
   StartCounter( 0 );
 }
 
+/*
+ * The main loop
+ */
+
+byte gpio0_current_value = 255, gpio2_current_value = 255;
+
 void loop ( void ) {
 	if( setup_data.dns_name[0] ) mdns.update();
 	server.handleClient();
@@ -465,25 +541,41 @@ void loop ( void ) {
   if( setup_data.gpio0_mode == 0 ) {
     // Input
     setup_data.gpio0_value = digitalRead( 0 );
-    DEBUG__( "GPIO0 read " );
-    DEBUGLN( setup_data.gpio0_value );
+    if( setup_data.gpio0_value != gpio0_current_value ) {
+      DEBUG__( "GPIO0 read " );
+      DEBUGLN( setup_data.gpio0_value );
+      call_url( gpio0_current_value, setup_data.gpio0_low2high, setup_data.gpio0_high2low );
+      gpio0_current_value = setup_data.gpio0_value;
+    }
   } else {
     // Output
     digitalWrite( 0, setup_data.gpio0_value );
-    DEBUG__( "GPIO0 write " );
-    DEBUGLN( setup_data.gpio0_value );
+    if( setup_data.gpio0_value != gpio0_current_value ) {
+      DEBUG__( "GPIO0 write " );
+      DEBUGLN( setup_data.gpio0_value );
+      call_url( gpio0_current_value, setup_data.gpio0_low2high, setup_data.gpio0_high2low );
+      gpio0_current_value = setup_data.gpio0_value;
+    }
   }
 
   if( setup_data.gpio2_mode == 0 ) {
     // Input
-    setup_data.gpio2_value = digitalRead( 2 );
-    DEBUG__( "GPIO2 read " );
-    DEBUGLN( setup_data.gpio2_value );
+   setup_data.gpio2_value = digitalRead( 2 );
+   if( setup_data.gpio2_value != gpio2_current_value ) {
+      DEBUG__( "GPIO2 read " );
+      DEBUGLN( setup_data.gpio2_value );
+      call_url( gpio2_current_value, setup_data.gpio2_low2high, setup_data.gpio2_high2low );
+      gpio2_current_value = setup_data.gpio2_value;    
+   }
   } else {
     // Output
     digitalWrite( 2, setup_data.gpio2_value );
-    DEBUG__( "GPIO2 write " );
-    DEBUGLN( setup_data.gpio2_value );
+    if( setup_data.gpio2_value != gpio2_current_value ) {
+      DEBUG__( "GPIO2 write " );
+      DEBUGLN( setup_data.gpio2_value );
+      call_url( gpio2_current_value, setup_data.gpio2_low2high, setup_data.gpio2_high2low );
+      gpio2_current_value = setup_data.gpio2_value;        
+    }
   }
 }
 
